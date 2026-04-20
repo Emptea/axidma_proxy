@@ -3,6 +3,7 @@ CC = gcc
 
 # Compiler flags
 CFLAGS = -I../Common -Wall -Wextra -O2
+LDFLAGS = -pthread
 
 # Source files
 SRCS = dma-proxy-test.c
@@ -15,7 +16,7 @@ all: $(TARGET)
 
 # Link the object files to create the executable
 $(TARGET): $(SRCS)
-	$(CC) $(CFLAGS) -o $(TARGET) $(SRCS)
+	$(CC) $(CFLAGS) -o $(TARGET) $(SRCS) $(LDFLAGS)
 
 # Clean up build files
 clean:
