@@ -55,6 +55,7 @@
 #include <time.h>
 #include <errno.h>
 #include <sys/param.h>
+#include <string.h>
 
 #include "dma-proxy.h"
 
@@ -79,7 +80,9 @@ struct channel {
 
 static int verify;
 static int test_size;
+static int words;
 static volatile int stop = 0;
+unsigned int *expected;
 int num_transfers;
 
 struct channel tx_channels[TX_CHANNEL_COUNT], rx_channels[RX_CHANNEL_COUNT];
@@ -126,9 +129,15 @@ void tx_thread(struct channel *channel_ptr)
 		 */
 		channel_ptr->buf_ptr[buffer_id].length = test_size;
 
-		if (verify)
-			for (i = 0; i < 1; i++) // test_size / sizeof(unsigned int); i++)
-				channel_ptr->buf_ptr[buffer_id].buffer[i] = i + in_progress_count;
+		if (verify) {    
+			unsigned int *txbuf = (unsigned int *)&channel_ptr->buf_ptr[buffer_id].buffer;
+			unsigned int sample_id = counter + in_progress_count;
+
+			for (i = 0; i < words; i++) {
+				txbuf[i] = (sample_id << 16) | (i & 0xFFFF);
+			}
+			memcpy(expected, txbuf, test_size);
+		}
 
 		/* Start the DMA transfer and this call is non-blocking
 		 *
@@ -210,11 +219,9 @@ void rx_thread(struct channel *channel_ptr)
 {
 	int in_progress_count = 0, buffer_id = 0;
 	int rx_counter = 0;
-
 	// Start all buffers being received
-
+	
 	for (buffer_id = 0; buffer_id < RX_BUFFER_COUNT; buffer_id += BUFFER_INCREMENT) {
-
 		/* Don't worry about initializing the receive buffers as the pattern used in the
 		 * transmit buffers is unique across every transfer so it should catch errors.
 		 */
@@ -247,15 +254,15 @@ void rx_thread(struct channel *channel_ptr)
 		/* Verify the data received matches what was sent (tx is looped back to tx)
 		 * A unique value in the buffers is used across all transfers
 		 */
+		unsigned int *rxbuf = (unsigned int *)&channel_ptr->buf_ptr[buffer_id].buffer;
 		if (verify) {
-			unsigned int *buffer = &channel_ptr->buf_ptr[buffer_id].buffer;
-			int i;
-			for (i = 0; i < 1; i++) // test_size / sizeof(unsigned int); i++) this is slow
-				if (buffer[i] != i + rx_counter) {
-					printf("buffer not equal, index = %d, data = %d expected data = %d\n", i,
-						buffer[i], i + rx_counter);
+			for (int i = 0; i < words; i++) {
+				if (rxbuf[i] != expected[i]) {
+					printf("Mismatch at %d: got 0x%08x expected 0x%08x\n",
+						i, rxbuf[i], expected[i]);
 					break;
 				}
+			}
 		}
 
 		/* Keep track how many transfers are in progress so that only the specified number
@@ -330,7 +337,6 @@ int main(int argc, char *argv[])
 	int i;
 	uint64_t start_time, end_time, time_diff;
 	int mb_sec;
-	int buffer_id = 0;
 	int max_channel_count = MAX(TX_CHANNEL_COUNT, RX_CHANNEL_COUNT);
 
 	printf("DMA proxy test\n");
@@ -353,7 +359,12 @@ int main(int argc, char *argv[])
 	if (test_size > BUFFER_SIZE)
 		test_size = BUFFER_SIZE;
 	test_size *= 1024;
-
+	expected = malloc(test_size);
+	if (!expected) {
+		perror("malloc");
+		exit(EXIT_FAILURE);
+	}
+	words = test_size / sizeof(unsigned int);
 	/* Verify is off by default to get pure performance of the DMA transfers without the CPU accessing all the data
 	 * to slow it down.
 	 */
