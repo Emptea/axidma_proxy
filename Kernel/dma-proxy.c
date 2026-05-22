@@ -349,7 +349,7 @@ static int release(struct inode *ino, struct file *file)
 	 */
 	dma_device->device_terminate_all(pchannel_p->channel_p);
 #endif
-	return 0;
+    return 0;
 }
 
 /* Perform I/O control to perform a DMA transfer using the input as an index
@@ -592,10 +592,15 @@ static int dma_proxy_probe(struct platform_device *pdev)
 	 * for cyclic mode.
 	 */
 	for (i = 0; i < lp->channel_count; i++) {
-		printk("Creating channel %s\r\n", lp->names[i]);
-		rc = create_channel(pdev, &lp->channels[i], lp->names[i], DMA_MEM_TO_DEV);
+    printk("Creating channel %s\r\n", lp->names[i]);
+		u32 direction;
+		if (strstr(lp->names[i], "rx"))           // name contains "rx"
+			direction = DMA_DEV_TO_MEM;
+		else
+			direction = DMA_MEM_TO_DEV;
 
-		if (rc) 
+		rc = create_channel(pdev, &lp->channels[i], lp->names[i], direction);
+		if (rc)
 			return rc;
 		total_count++;
 	}
