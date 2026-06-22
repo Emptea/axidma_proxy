@@ -520,8 +520,9 @@ static int create_channel(struct platform_device *pdev, struct dma_proxy_channel
 		dmam_alloc_coherent(pchannel_p->dma_device_p,
 					sizeof(struct channel_buffer) * BUFFER_COUNT,
 					&pchannel_p->buffer_phys_addr, GFP_KERNEL);
-	printk(KERN_INFO "Allocating memory, virtual address: %px physical address: %px\n",
-			pchannel_p->buffer_table_p, (void *)pchannel_p->buffer_phys_addr);
+
+	printk(KERN_INFO "Allocating memory, virtual address: %px physical address: %px size %ld\n",
+			pchannel_p->buffer_table_p, (void *)pchannel_p->buffer_phys_addr, sizeof(struct channel_buffer));
 
 	/* Initialize each entry in the buffer descriptor table such that the physical address	
 	 * address of each buffer is ready to use later.

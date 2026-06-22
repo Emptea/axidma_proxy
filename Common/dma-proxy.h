@@ -23,7 +23,7 @@
  * otherwise there may be issues when using cached memory.
  */
 
-#define BUFFER_SIZE (128 * 1024)	 	/* must match driver exactly */
+#define BUFFER_SIZE (sizeof(unsigned int) * 1024)	 	/* must match driver exactly */
 #define BUFFER_COUNT 32					/* driver only */
 
 #define TX_BUFFER_COUNT 	1				/* app only, must be <= to the number in the driver */
@@ -38,4 +38,4 @@ struct channel_buffer {
 	unsigned int buffer[BUFFER_SIZE / sizeof(unsigned int)];
 	enum proxy_status { PROXY_NO_ERROR = 0, PROXY_BUSY = 1, PROXY_TIMEOUT = 2, PROXY_ERROR = 3 } status;
 	unsigned int length;
-} __attribute__ ((aligned (1024)));		/* 64 byte alignment required for DMA, but 1024 handy for viewing memory */
+} __attribute__ ((aligned (64)));		/* 64 byte alignment required for DMA, but 1024 handy for viewing memory */
