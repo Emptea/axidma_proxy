@@ -145,8 +145,9 @@ struct proxy_bd {
 	struct scatterlist sglist;
 };
 struct dma_proxy_channel {
-	struct channel_buffer *buffer_table_p;	/* user to kernel space interface */
+	struct channel_contagious_buffer *buffer_table_p;	/* user to kernel space interface */
 	dma_addr_t buffer_phys_addr;
+	struct channel_buffer_state *buffer_state_p;  
 
 	struct device *proxy_device_p;				/* character device support */
 	struct device *dma_device_p;
@@ -197,7 +198,7 @@ static void start_transfer(struct dma_proxy_channel *pchannel_p)
 	 */
 	sg_init_table(&pchannel_p->bdtable[bdindex].sglist, 1);
 	sg_dma_address(&pchannel_p->bdtable[bdindex].sglist) = pchannel_p->bdtable[bdindex].dma_handle;
-	sg_dma_len(&pchannel_p->bdtable[bdindex].sglist) = pchannel_p->buffer_table_p[bdindex].length;
+	sg_dma_len(&pchannel_p->bdtable[bdindex].sglist) = pchannel_p->buffer_state_p[bdindex].length;
 
 	chan_desc = dma_device->device_prep_slave_sg(pchannel_p->channel_p, &pchannel_p->bdtable[bdindex].sglist, 1, 
 						pchannel_p->direction, flags, NULL);
@@ -234,7 +235,7 @@ static void wait_for_transfer(struct dma_proxy_channel *pchannel_p)
 	enum dma_status status;
 	int bdindex = pchannel_p->bdindex;
 
-	pchannel_p->buffer_table_p[bdindex].status = PROXY_BUSY;
+	pchannel_p->buffer_state_p[bdindex].status = PROXY_BUSY;
 
 	/* Wait for the transaction to complete, or timeout, or get an error
 	 */
@@ -242,14 +243,14 @@ static void wait_for_transfer(struct dma_proxy_channel *pchannel_p)
 	status = dma_async_is_tx_complete(pchannel_p->channel_p, pchannel_p->bdtable[bdindex].cookie, NULL, NULL);
 
 	if (timeout == 0)  {
-		pchannel_p->buffer_table_p[bdindex].status  = PROXY_TIMEOUT;
+		pchannel_p->buffer_state_p[bdindex].status  = PROXY_TIMEOUT;
 		printk(KERN_ERR "DMA timed out\n");
 	} else if (status != DMA_COMPLETE) {
-		pchannel_p->buffer_table_p[bdindex].status = PROXY_ERROR;
+		pchannel_p->buffer_state_p[bdindex].status = PROXY_ERROR;
 		printk(KERN_ERR "DMA returned completion callback status of: %s\n",
 			   status == DMA_ERROR ? "error" : "in progress");
 	} else
-		pchannel_p->buffer_table_p[bdindex].status = PROXY_NO_ERROR;
+		pchannel_p->buffer_state_p[bdindex].status = PROXY_NO_ERROR;
 }
 
 /* The following functions are designed to test the driver from within the device
@@ -263,7 +264,7 @@ static void tx_test(struct work_struct *local_work)
 
 	/* Use the 1st buffer for the test
 	 */
-	lp->channels[TX_CHANNEL].buffer_table_p[0].length = TEST_SIZE;
+	lp->channels[TX_CHANNEL].buffer_state_p[0].length = TEST_SIZE;
 	lp->channels[TX_CHANNEL].bdindex = 0;
 
 	start_transfer(&lp->channels[TX_CHANNEL]);
@@ -279,8 +280,8 @@ static void test(struct dma_proxy *lp)
 	/* Initialize the buffers for the test
 	 */
 	for (i = 0; i < TEST_SIZE / sizeof(unsigned int); i++) {
-		lp->channels[TX_CHANNEL].buffer_table_p[0].buffer[i] = i;
-		lp->channels[RX_CHANNEL].buffer_table_p[0].buffer[i] = 0;
+		lp->channels[TX_CHANNEL].buffer_table_p->buffers[0].buffer[i] = i;
+		lp->channels[RX_CHANNEL].buffer_table_p->buffers[0].buffer[i] = 0;
 	}
 
 	/* Since the transfer function is blocking the transmit channel is started from a worker
@@ -291,7 +292,7 @@ static void test(struct dma_proxy *lp)
 
 	/* Receive the data that was just sent and looped back
 	 */
-	lp->channels[RX_CHANNEL].buffer_table_p->length = TEST_SIZE;
+	lp->channels[RX_CHANNEL].buffer_state_p->length = TEST_SIZE;
 	lp->channels[TX_CHANNEL].bdindex = 0;
 
 	start_transfer(&lp->channels[RX_CHANNEL]);
@@ -301,8 +302,8 @@ static void test(struct dma_proxy *lp)
 	 * verify the transfer was good
 	 */
 	for (i = 0; i < TEST_SIZE / sizeof(unsigned int); i++)
-		if (lp->channels[TX_CHANNEL].buffer_table_p[0].buffer[i] !=
-			lp->channels[RX_CHANNEL].buffer_table_p[0].buffer[i]) {
+		if (lp->channels[TX_CHANNEL].buffer_table_p->buffers[0].buffer[i] !=
+			lp->channels[RX_CHANNEL].buffer_table_p->buffers[0].buffer[i]) {
 			printk("buffers not equal, first index = %d\n", i);
 			break;
 		}
@@ -516,20 +517,22 @@ static int create_channel(struct platform_device *pdev, struct dma_proxy_channel
 	 * a set of buffers for the channel with user space specifying which buffer
 	 * to use for a tranfer..
 	 */
-	pchannel_p->buffer_table_p = (struct channel_buffer *)
+	pchannel_p->buffer_table_p = (struct channel_contagious_buffer *)
 		dmam_alloc_coherent(pchannel_p->dma_device_p,
-					sizeof(struct channel_buffer) * BUFFER_COUNT,
+					sizeof(struct channel_contagious_buffer),
 					&pchannel_p->buffer_phys_addr, GFP_KERNEL);
 
+	pchannel_p->buffer_state_p = pchannel_p->buffer_table_p->states;
+
 	printk(KERN_INFO "Allocating memory, virtual address: %px physical address: %px size %ld\n",
-			pchannel_p->buffer_table_p, (void *)pchannel_p->buffer_phys_addr, sizeof(struct channel_buffer));
+			pchannel_p->buffer_table_p, (void *)pchannel_p->buffer_phys_addr, sizeof(struct channel_contagious_buffer));
 
 	/* Initialize each entry in the buffer descriptor table such that the physical address	
 	 * address of each buffer is ready to use later.
 	 */
 	for (bd = 0; bd < BUFFER_COUNT; bd++) 
 		pchannel_p->bdtable[bd].dma_handle = (dma_addr_t)(pchannel_p->buffer_phys_addr + 
-						(sizeof(struct channel_buffer) * bd) + offsetof(struct channel_buffer, buffer));
+						offsetof(struct channel_contagious_buffer, buffers[bd]));
 
 	/* The buffer descriptor index into the channel buffers should be specified in each 
 	 * ioctl but we will initialize it to be safe.
