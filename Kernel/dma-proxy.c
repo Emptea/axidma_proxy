@@ -346,7 +346,6 @@ static void tx_test(struct work_struct *local_work)
 	/* Use the 1st buffer for the test
 	 */
 	lp->channels[TX_CHANNEL].buffer_state_p[0].length = TEST_SIZE;
-	lp->channels[TX_CHANNEL].bdindex = 0;
 
 	transfer(&lp->channels[TX_CHANNEL], 0, XFER);
 }
@@ -677,8 +676,9 @@ static int dma_proxy_probe(struct platform_device *pdev)
 	 * for cyclic mode.
 	 */
 	for (i = 0; i < lp->channel_count; i++) {
-    printk("Creating channel %s\r\n", lp->names[i]);
 		u32 direction;
+
+		printk("Creating channel %s\r\n", lp->names[i]);
 		if (strstr(lp->names[i], "rx"))           // name contains "rx"
 			direction = DMA_DEV_TO_MEM;
 		else
