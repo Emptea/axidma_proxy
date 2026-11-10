@@ -23,7 +23,7 @@
  * otherwise there may be issues when using cached memory.
  */
 #define BUFFER_SIZE      (sizeof(unsigned int) * (232 + 6 + 2) * 20) /* must match driver exactly */
-#define BUFFER_COUNT     32                               /* driver only */
+#define BUFFER_COUNT 	 128 /* driver only */
 
 #define TX_BUFFER_COUNT  1 /* app only, must be <= to the number in the driver */
 #define RX_BUFFER_COUNT  4 /* app only, must be <= to the number in the driver */
